@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from proxy.core.logger import logger
 from proxy.transport.proxy_server import ProxyServer
-from proxy.core.config import ProxySettings
+from proxy.core.config import ProxySettings, load_settings_from_file
 
 
 def main():
@@ -22,7 +22,6 @@ def main():
             f.write(ProxySettings().model_dump_json(indent=4))
 
     # Импортируем нашу функцию явной загрузки
-    from proxy.core.config import load_settings_from_file
     load_settings_from_file(config_path)
 
     # Создание экземпляра асинхронного Nginx и его запуск
