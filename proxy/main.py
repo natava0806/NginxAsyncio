@@ -1,54 +1,36 @@
 import asyncio
-import sys
 import os
+import sys
+
 
 # Автоматическое добавление корневой директории проекта.
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from proxy.proxy_server import ProxyServer
-from proxy.config import settings
+from proxy.core.logger import logger
+from proxy.transport.proxy_server import ProxyServer
 
 
 def main():
-    config_path = "config.json"
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config_path = os.path.join(base_dir, "config.json")
 
-    # Если файла config.json нет рядом, автоматически нужно создать дефолтный
-    # с параметрами строго из ТЗ.
+    # Если файла конфигурации нет, генерируем его НАПРЯМУЮ из дефолтов Pydantic!
     if not os.path.exists(config_path):
-        import json
-        default_config = {
-            "listen": "127.0.0.1:8080",
-            "upstreams": [
-                {"host": "127.0.0.1", "port": 9001},
-                {"host": "127.0.0.1", "port": 9002}
-            ],
-            "timeouts": {
-                "connect_ms": 1000,
-                "read_ms": 15000,
-                "write_ms": 15000,
-                "total_ms": 30000
-            },
-            "limits": {
-                "max_client_conns": 1000,
-                "max_conns_per_upstream": 100
-            },
-            "logging": {
-                "level": "info"
-            }
-        }
+        from proxy.core.config import ProxySettings
+        # model_dump_json автоматически сериализует все дефолты в красивый JSON
         with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(default_config, f, indent=4)
+            f.write(ProxySettings().model_dump_json(indent=4))
 
-    # Загрузка настроек из файла в глобальный синглтон settings
-    settings.load_from_file(config_path)
+    # Импортируем нашу функцию явной загрузки
+    from proxy.core.config import load_settings_from_file
+    load_settings_from_file(config_path)
 
     # Создание экземпляра асинхронного Nginx и его запуск
     proxy = ProxyServer()
     try:
         asyncio.run(proxy.start())
     except KeyboardInterrupt:
-        # Корректный перехват Ctrl+C в терминале для завершения работы без простыни ошибок
-        print("\n[INFO] Mini-Nginx stopped by user.")
+        logger.info("Mini-Nginx stopped by user.")
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ class TimeoutPolicy:
         """
         try:
             return asyncio.wait_for(coro, timeout=timeout_sec)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Получение стандартного таймаута и добавление к нему контекста, чтобы
             # в логах было четко видно: упал коннект, чтение или запись.
-            raise asyncio.TimeoutError(f"Operation timed out: {context_err} ({timeout_sec}s)")
+            raise TimeoutError(f"Operation timed out: {context_err} ({timeout_sec}s)") from None

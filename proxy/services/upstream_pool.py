@@ -1,6 +1,7 @@
 import asyncio
-from typing import Dict, Tuple, List
-from proxy.config import UpstreamConfig
+
+from proxy.core.config import UpstreamConfig
+from proxy.core.logger import logger
 
 
 class UpstreamConnection:
@@ -15,7 +16,7 @@ class UpstreamConnection:
 class UpstreamPool:
     """'Умный' пул соединений с балансировщиком Round-Robin и контролем лимитов."""
 
-    def __init__(self, upstreams: List[UpstreamConfig], max_conns_per_upstream: int, keepalive_timeout: float = 60.0):
+    def __init__(self, upstreams: list[UpstreamConfig], max_conns_per_upstream: int, keepalive_timeout: float = 60.0):
         # Превращение конфиг-объекты в простые кортежи (host, port)
         self.endpoints = [(u.host, u.port) for u in upstreams]
         self.max_conns = max_conns_per_upstream
@@ -27,9 +28,9 @@ class UpstreamPool:
         self.semaphores = {addr: asyncio.Semaphore(max_conns_per_upstream) for addr in self.endpoints}
 
         # Хранилище свободных keep-alive соединений: { (host, port): [UpstreamConnection, ...] }
-        self.pools: Dict[Tuple[str, int], List[UpstreamConnection]] = {addr: [] for addr in self.endpoints}
+        self.pools: dict[tuple[str, int], list[UpstreamConnection]] = {addr: [] for addr in self.endpoints}
 
-    async def acquire(self) -> Tuple[Tuple[str, int], asyncio.StreamReader, asyncio.StreamWriter, asyncio.Semaphore]:
+    async def acquire(self) -> tuple[tuple[str, int], asyncio.StreamReader, asyncio.StreamWriter, asyncio.Semaphore]:
         """
         Выбирает апстрим по Round-Robin, резервирует слот через семафор
         строит или достает из пула готовое TCP-соединение.
@@ -67,15 +68,15 @@ class UpstreamPool:
                 conn.writer.close()
                 try:
                     await conn.writer.wait_closed()
-                except:
-                    pass
+                except Exception as err:
+                    logger.error(f"Error closing expired upstream connection during acquire to {addr}: {err}")
 
         # 4. Если в пуле не нашлось живого соединения — нужно открыть новое TCP-соединение
         # Устанавка limit=65536 байт для внутреннего буфера StreamReader, чтобы контролировать RAM
         reader, writer = await asyncio.open_connection(addr[0], addr[1], limit=65536)
         return addr, reader, writer, sem
 
-    async def release(self, addr: Tuple[str, int], reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
+    async def release(self, addr: tuple[str, int], reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
                       sem: asyncio.Semaphore, keep_alive: bool):
         """
         Возвращает соединение обратно в пул для повторного использования
@@ -93,8 +94,8 @@ class UpstreamPool:
                 writer.close()
                 try:
                     await writer.wait_closed()
-                except:
-                    pass
+                except Exception as err:
+                    logger.error(f"Error wait_closed during forced upstream release to {addr}: {err}")
         finally:
             # В ЛЮБОМ СЛУЧАЕ освобождаем семафор, чтобы дать дорогу другим запросам
             sem.release()

@@ -1,11 +1,10 @@
-from typing import Tuple, Dict
 
 
 class HTTPParser:
     """Низкоуровневый парсер HTTP/1.1 текстовых протоколов."""
 
     @staticmethod
-    def parse_headers(raw_headers: bytes) -> Tuple[str, str, str, Dict[str, str]]:
+    def parse_headers(raw_headers: bytes) -> tuple[str, str, str, dict[str, str]]:
         """
         Принимает байтовую строку заголовков (до \r\n\r\n).
         Возвращает кортеж: (метод, путь, версия, словарь_заголовков).
@@ -33,7 +32,7 @@ class HTTPParser:
         return method, path, version, headers
 
     @staticmethod
-    def should_keep_alive(version: str, headers: Dict[str, str]) -> bool:
+    def should_keep_alive(version: str, headers: dict[str, str]) -> bool:
         """Определяет, требует ли соединение постоянного удержания (Keep-Alive)."""
         conn = headers.get('connection', '').lower()
         if version == 'HTTP/1.1':

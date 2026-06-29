@@ -1,12 +1,15 @@
 import asyncio
 import sys
 
+from proxy.core.config import HTTP_HEADER_DELIMITER
+from proxy.core.logger import logger
+
 
 async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     """Асинхронный обработчик, который возвращает тело запроса обратно клиенту."""
     header_data = b""
     # 1. Чтение входящего потока до тех пор, пока не встретится конец заголовков HTTP
-    while b"\r\n\r\n" not in header_data:
+    while HTTP_HEADER_DELIMITER not in header_data:
         chunk = await reader.read(4096)
         if not chunk:
             break
@@ -23,8 +26,8 @@ async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
         if line.lower().startswith("content-length:"):
             try:
                 content_length = int(line.split(":", 1)[1].strip())
-            except ValueError:
-                pass
+            except ValueError as err:
+                logger.warning(f"Malformed Content-Length header skipped: {err}")
 
     # 3. Формирование стандартного HTTP/1.1 ответа
     response_headers = (
@@ -39,8 +42,8 @@ async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     # 4. Потоковый эхо-стриминг тела
     bytes_read = 0
     # Если часть тела запроса уже успела прочитаться вместе с заголовками в первом цикле
-    if b"\r\n\r\n" in header_data:
-        body_start = header_data.split(b"\r\n\r\n", 1)[1]
+    if HTTP_HEADER_DELIMITER in header_data:
+        body_start = header_data.split(HTTP_HEADER_DELIMITER, 1)[1]
         if body_start:
             writer.write(body_start)
             await writer.drain()
@@ -77,4 +80,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print(f"\n[INFO] Upstream echo server stopped by user.")
+        print("\n[INFO] Upstream echo server stopped by user.")

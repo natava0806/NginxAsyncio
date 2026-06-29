@@ -1,0 +1,26 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+# ИСПРАВЛЕНО: Перенесли списки в правильную секцию по совету Ruff
+select = [
+    "E",   # Ошибки стиля pycodestyle
+    "W",   # Предупреждения стиля pycodestyle
+    "F",   # Ошибки логики Pyflakes
+    "I",   # Автоматическая сортировка импортов (isort)
+    "UP",  # Обновление синтаксиса до Python 3.11+
+    "B",   # Потенциальные баги (flake8-bugbear)
+]
+ignore = [
+    "D",   # Не требовать docstring
+]
+
+[tool.ruff.lint.isort]
+force-single-line = false
+lines-after-imports = 2
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

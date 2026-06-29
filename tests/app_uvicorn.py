@@ -1,5 +1,6 @@
 async def app(scope, receive, send):
-    if scope["type"] != "http": return
+    if scope["type"] != "http":
+        return
     body = b""
     more_body = True
     while more_body:
