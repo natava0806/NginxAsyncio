@@ -8,6 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from proxy.core.logger import logger
 from proxy.transport.proxy_server import ProxyServer
+from proxy.core.config import ProxySettings
 
 
 def main():
@@ -16,7 +17,6 @@ def main():
 
     # Если файла конфигурации нет, генерируем его НАПРЯМУЮ из дефолтов Pydantic!
     if not os.path.exists(config_path):
-        from proxy.core.config import ProxySettings
         # model_dump_json автоматически сериализует все дефолты в красивый JSON
         with open(config_path, "w", encoding="utf-8") as f:
             f.write(ProxySettings().model_dump_json(indent=4))
