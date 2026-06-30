@@ -1,35 +1,39 @@
 import asyncio
+import json
 import os
 import sys
-
 
 # Автоматическое добавление корневой директории проекта.
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from proxy.core.config import ProxySettings, load_settings_from_file
 from proxy.core.logger import logger
 from proxy.transport.proxy_server import ProxyServer
-from proxy.core.config import ProxySettings, load_settings_from_file
 
 
-def main():
+def main() -> None:
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config_path = os.path.join(base_dir, "config.json")
 
-    # Если файла конфигурации нет, генерируем его НАПРЯМУЮ из дефолтов Pydantic!
     if not os.path.exists(config_path):
-        # model_dump_json автоматически сериализует все дефолты в красивый JSON
-        with open(config_path, "w", encoding="utf-8") as f:
-            f.write(ProxySettings().model_dump_json(indent=4))
+        print(f"Configuration file strictly required but missing: {config_path}")
+        return
 
-    # Импортируем нашу функцию явной загрузки
     load_settings_from_file(config_path)
 
-    # Создание экземпляра асинхронного Nginx и его запуск
-    proxy = ProxyServer()
+    with open(config_path, encoding="utf-8") as f:
+        config_data = json.load(f)
+        app_settings = ProxySettings.model_validate(config_data)
+
+    # Динамически выставляем уровень логирования из конфига
+    logger.setLevel(app_settings.log_level)
+
+    proxy = ProxyServer(app_settings)
+
     try:
         asyncio.run(proxy.start())
     except KeyboardInterrupt:
-        logger.info("Mini-Nginx stopped by user.")
+        logger.info("Async Mini-Nginx stopped by user.")
 
 
 if __name__ == "__main__":

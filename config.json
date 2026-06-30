@@ -5,17 +5,17 @@
         {"host": "127.0.0.1", "port": 9002}
     ],
     "timeouts": {
-        "connect_ms": 1000,
-        "read_ms": 15000,
-        "write_ms": 15000,
-        "total_ms": 30000
+        "connect_ms": 5000.0,
+        "read_ms": 15000.0,
+        "write_ms": 15000.0,
+        "total_ms": 30000.0
     },
     "limits": {
-        "max_client_conns": 1000,
-        "max_conns_per_upstream": 100,
+        "max_client_conns": 10000,
+        "max_conns_per_upstream": 2000,
         "metrics_interval": 5.0
     },
     "logging": {
-        "level": "info"
+        "level": "INFO"
     }
 }

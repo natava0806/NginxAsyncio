@@ -1,6 +1,6 @@
 import asyncio
 
-from proxy.core.config import settings
+from proxy.core.config import ProxySettings
 from proxy.core.logger import logger
 from proxy.core.metrics import metrics
 from proxy.services.client_handler import ClientConnectionHandler
@@ -8,22 +8,24 @@ from proxy.services.upstream_pool import UpstreamPool
 
 
 class ProxyServer:
-    """TCP-сервер оркестрации, управляющий входящим трафиком и ресурсами."""
+    """Асинхронный TCP-сервер оркестрации, управляющий входящим трафиком через пул воркеров."""
 
-    def __init__(self):
-        # Настройка глобального логгера на уровень из конфига
-        # ИСПРАВЛЕНО: Убрали setup_logger(), используем настроенный logger
-        # setup_logger(settings.log_level)
+    def __init__(self, app_settings: ProxySettings) -> None:
+        # Внедряем настройки через Dependency Injection
+        self._settings = app_settings
 
-        # Инициализация пула апстримов и семафора глобальных клиентских лимитов
-        self._pool = UpstreamPool(settings.upstreams, settings.limits.max_conns_per_upstream)
-        self._queue = asyncio.Queue(maxsize=settings.limits.max_client_conns)
+        # Передаем оригинальный список моделей Pydantic, так как UpstreamPool сам распакует их!
+        self._pool = UpstreamPool(
+            self._settings.upstreams,
+            self._settings.limits.max_conns_per_upstream
+        )
+        self._queue = asyncio.Queue(maxsize=self._settings.limits.max_client_conns)
         self._server = None
 
         # Хранилище сильных ссылок на задачи (защита от сборщика мусора GC)
         self._background_tasks = set()
 
-        # Пул из 50 постоянных воркеров для разбора очереди
+        # Пул из 50 постоянных асинхронных воркеров для разбора очереди
         self._num_workers = 50
 
     async def _worker_loop(self) -> None:
@@ -32,7 +34,7 @@ class ProxyServer:
             # Ожидание появления нового клиента в очереди
             reader, writer = await self._queue.get()
             try:
-                handler = ClientConnectionHandler(reader, writer, self._pool)
+                handler = ClientConnectionHandler(reader, writer, self._pool, self._settings)
                 await handler.handle()
             except Exception as err:
                 logger.error(f"Error inside proxy worker processing pipeline: {err}")
@@ -40,31 +42,26 @@ class ProxyServer:
                 # Обязательно сигнализировать очереди, что задача закрыта
                 self._queue.task_done()
 
-    async def _dispatch_client(self, reader, writer):
-        """Обработка нового клиента с защитой по количеству подключений."""
+    async def _dispatch_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """Обработка нового клиента с защитой по количеству подключений (Load Shedding)."""
         if self._queue.full():
             logger.warning("Global client limits exceeded! Drop incoming connection.")
             try:
-                writer.write(b"HTTP/1.1 503 Service Unavailable\r\n\r\n")
+                writer.write(b"HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\nServer Busy")
                 await writer.drain()
                 writer.close()
+                await writer.wait_closed()
             except Exception as err:
                 logger.error(f"Failed to send 503 response to rejected client: {err}")
             return
 
-        # Атомарно пушим кортеж стримов в очередь без блокировки Event Loop
+        # Атомарно пушим кортеж асинхронных стримов в очередь без блокировки Event Loop
         self._queue.put_nowait((reader, writer))
 
-    # async def _run_handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-    #    """Оборачивает хэндлер в семафор контроля емкости прокси."""
-    #    async with self._global_client_semaphore:
-    #        handler = ClientConnectionHandler(reader, writer, self._pool)
-    #        await handler.handle()
-
     async def _log_metrics_loop(self) -> None:
-        """Фоновый цикл метрик [INDEX]."""
+        """Фоновый цикл периодического вывода статистики."""
         while True:
-            await asyncio.sleep(settings.limits.metrics_interval)
+            await asyncio.sleep(self._settings.limits.metrics_interval)
             stats = metrics.get_stats()
             logger.info(
                 f"[METRICS] Active Conns: {stats['active_connections']} | "
@@ -75,23 +72,23 @@ class ProxyServer:
             )
 
     async def start(self) -> None:
-        """Запускает пул воркеров, TCP-сервер и фоновый поток мониторинга метрик."""
-        # 1. Запуск пула фоновых воркеров для разбора очереди
+        """Запускает пул воркеров, асинхронный TCP-сервер и фоновый мониторинг метрик."""
+        # 1. Запуск пула фоновых асинхронных воркеров для разбора очереди
         for _ in range(self._num_workers):
             worker_task = asyncio.create_task(self._worker_loop())
             self._background_tasks.add(worker_task)
             worker_task.add_done_callback(self._background_tasks.discard)
 
-        # 2. Старт сетевого TCP-сервера
+        # 2. Старт сетевого асинхронного TCP-сервера
         self._server = await asyncio.start_server(
             self._dispatch_client,
-            settings.listen_host,
-            settings.listen_port,
+            self._settings.listen_host,
+            self._settings.listen_port,
             limit=65536
         )
 
         addr = self._server.sockets[0].getsockname()
-        logger.info(f"High-Performance Mini-Nginx running on http://{addr[0]}:{addr[1]}")  # noqa: S113
+        logger.info(f"High-Performance Async Mini-Nginx running on http://{addr[0]}:{addr[1]}")
 
         # 3. Запуск фоновой задачи периодического вывода статистики
         metrics_task = asyncio.create_task(self._log_metrics_loop())
